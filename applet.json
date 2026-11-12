@@ -1,0 +1,43 @@
+{
+  "schema": 1,
+  "id": "linspectacles-boot-loaders",
+  "name": "Boot Loaders",
+  "version": "0.1.8",
+  "author": "brunonlinespace",
+  "editor": "brunonlinespace",
+  "publisher": "brunonlinespace",
+  "order": 10,
+  "entrypoint": "boot_loaders/applet.py",
+  "factory": "create_applet",
+  "standalone": "standalone.py",
+  "description": "Read-only structured inspection of installed/reported boot loaders, EFI System Partitions and EFI boot state with optional ephemeral privileged visibility.",
+  "platforms": [
+    "linux"
+  ],
+  "read_only": true,
+  "privileged_helper": {
+    "schema": 1,
+    "id": "linspectacles-boot-loaders",
+    "name": "Boot Loaders Privileged Helper",
+    "version": "0.0.8",
+    "protocol": 1,
+    "publisher": "brunonlinespace",
+    "payload": "boot_loaders/privileged/linspectacles-boot-helper",
+    "install_path": "/usr/libexec/linspectacles-boot-helper",
+    "sha256": "f7df62cb2697fca120eacd4b0e0cfe460d2727c4b52b35b302b0ad6790ddd2af",
+    "session_model": "window_ephemeral",
+    "read_only": true,
+    "capabilities": [
+      {
+        "id": "boot_loader_status",
+        "label": "Boot-loader / EFI status",
+        "standard": "Uses bootctl status with ordinary-user access and structures the sections visible to the current user.",
+        "elevated": "Runs the same fixed read-only bootctl status query through the verified helper, which can expose records or fields restricted by ordinary permissions.",
+        "kind": "expanded"
+      }
+    ]
+  },
+  "organization_id": "linspectacles",
+  "organization_url": "https://github.com/linspectacles/",
+  "repository": "https://github.com/linspectacles/boot-loaders"
+}
