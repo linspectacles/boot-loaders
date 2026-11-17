@@ -8,7 +8,7 @@ from __future__ import annotations
 
 APPLET_ID = "linspectacles-boot-loaders"
 APPLET_NAME = "Boot Loaders"
-APPLET_VERSION = "0.1.8"
+APPLET_VERSION = "0.1.10"
 APPLET_AUTHOR = "brunonlinespace"
 APPLET_EDITOR = "brunonlinespace"
 APPLET_ORGANIZATION_ID = "linspectacles"
@@ -67,9 +67,7 @@ Privileged inspection
   arbitrary file-read API.
 
 Raw Data
-  Raw Data uses only the text retained from the current bootctl acquisition.
-  Selected Source Section preserves the complete reported section containing
-  the selected record; Full Snapshot preserves the complete retained output.
+  Raw Data shows the complete text retained from the current bootctl acquisition.
   Opening, copying, or exporting Raw Data does not rerun bootctl.
 
 Important distinctions
@@ -346,16 +344,14 @@ def _populate_sources_canvas(canvas):
 class RawDataDialog(QDialog):
     """Snapshot-only view of the exact bootctl text already acquired."""
 
-    def __init__(self, owner, record, parent=None):
+    def __init__(self, owner, parent=None):
         super().__init__(parent or owner)
         self.owner = owner
-        self.record = record or {}
         self.setWindowTitle("Raw Data — Boot Loaders")
         self.resize(980, 720)
 
         result = owner._last_collect or {}
         self._full_snapshot = str(result.get("text") or "")
-        self._source_section = str(self.record.get("_raw_section") or "")
 
         root = QVBoxLayout(self)
         root.setContentsMargins(12, 12, 12, 12)
@@ -369,13 +365,9 @@ class RawDataDialog(QDialog):
         root.addWidget(heading)
 
         context = "Privileged helper snapshot" if owner._last_collect_elevated else "Standard-access snapshot"
-        record_name = str(self.record.get("name") or "Boot Loader Record")
-        section_name = str(self.record.get("_section") or "Not reported")
         note = QLabel(
-            f"{context} · Selected record: {record_name} · Source section: {section_name}. "
-            "This dialog shows only data retained by the current inspection; it never reruns bootctl. "
-            "Where one bootctl section contains several records, Selected Source Section deliberately "
-            "preserves that complete source section rather than reconstructing a synthetic per-record dump."
+            f"{context} · Full retained output from the current inspection. "
+            "This dialog never reruns bootctl."
         )
         note.setWordWrap(True)
         root.addWidget(note)
@@ -384,16 +376,10 @@ class RawDataDialog(QDialog):
         command.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         root.addWidget(command)
 
-        self.tabs = QTabWidget()
-        self.section_text = self._raw_text_widget(
-            self._source_section or "No retained source section is available for this record."
-        )
         self.snapshot_text = self._raw_text_widget(
             self._full_snapshot or "No retained bootctl output is available for this inspection."
         )
-        self.tabs.addTab(self.section_text, "Selected Source Section")
-        self.tabs.addTab(self.snapshot_text, "Full Snapshot")
-        root.addWidget(self.tabs, 1)
+        root.addWidget(self.snapshot_text, 1)
 
         action_row = QHBoxLayout()
         action_row.addStretch(1)
@@ -414,31 +400,45 @@ class RawDataDialog(QDialog):
         widget.setLineWrapMode(QTextEdit.LineWrapMode.NoWrap)
         widget.setFont(QFontDatabase.systemFont(QFontDatabase.SystemFont.FixedFont))
         widget.setPlainText(text)
-        widget.moveCursor(QTextCursor.MoveOperation.Start)
         widget.setStyleSheet(
             "QTextEdit { background-color: #151719; color: #dcdcdc; "
             "border: 1px solid #333333; }"
         )
+
+        # Use the exact Sources palette without changing any retained raw text.
+        key_format, _value_format = _source_formats()
+        block = widget.document().begin()
+        while block.isValid():
+            line = block.text()
+            if line and not line[0].isspace() and line.rstrip().endswith(":"):
+                start, end = 0, len(line)
+            else:
+                match = _KEY_VALUE_RE.match(line)
+                if match is None:
+                    block = block.next()
+                    continue
+                start, end = match.start(1), match.end(1) + 1
+
+            cursor = widget.textCursor()
+            cursor.setPosition(block.position() + start)
+            cursor.setPosition(block.position() + end, QTextCursor.MoveMode.KeepAnchor)
+            cursor.mergeCharFormat(key_format)
+            block = block.next()
+
+        widget.moveCursor(QTextCursor.MoveOperation.Start)
         return widget
 
     def _current_text(self):
-        widget = self.tabs.currentWidget()
-        return widget.toPlainText() if isinstance(widget, QTextEdit) else ""
+        return self._full_snapshot
 
     def _copy_current(self):
         QApplication.clipboard().setText(self._current_text())
 
     def _export_current(self):
-        current_label = self.tabs.tabText(self.tabs.currentIndex())
-        stem = (
-            "boot-loaders-raw-section"
-            if current_label == "Selected Source Section"
-            else "boot-loaders-raw-snapshot"
-        )
         path, _selected_filter = QFileDialog.getSaveFileName(
             self,
             "Export Raw Data",
-            stem + ".txt",
+            "boot-loaders-raw-snapshot.txt",
             "Plain Text (*.txt);;All Files (*)",
         )
         if not path:
@@ -746,13 +746,6 @@ class BootInspectorWidget(BaseInspectorTab):
         self.metadata_panel_visible = True
         self._load_metadata_panel_visibility()
 
-        # Raw Data is an explicit selected-record view of the current retained snapshot.
-        refresh_index = self.dash_layout.indexOf(self.refresh_btn)
-        self.raw_data_btn = QPushButton("Raw Data...")
-        self.raw_data_btn.setEnabled(False)
-        self.raw_data_btn.clicked.connect(self.show_raw_data)
-        self.dash_layout.insertWidget(refresh_index, self.raw_data_btn)
-
         # The separate Sources and Export controls are consolidated into Options.
         self.export_btn.hide()
         export_index = self.dash_layout.indexOf(self.export_btn)
@@ -766,6 +759,13 @@ class BootInspectorWidget(BaseInspectorTab):
             export_index += 1
         else:
             self.privilege_btn = None
+
+        # Raw Data is an explicit full view of the current retained snapshot.
+        self.raw_data_btn = QPushButton("Raw Data...")
+        self.raw_data_btn.setEnabled(False)
+        self.raw_data_btn.clicked.connect(self.show_raw_data)
+        self.dash_layout.insertWidget(export_index, self.raw_data_btn)
+        export_index += 1
 
         self.options_btn = QPushButton("Options...")
         self.options_btn.clicked.connect(self.show_options)
@@ -931,20 +931,18 @@ class BootInspectorWidget(BaseInspectorTab):
     def _sync_raw_data_button(self):
         if not hasattr(self, "raw_data_btn"):
             return
-        record = self.current_record()
         result = self._last_collect or {}
-        self.raw_data_btn.setEnabled(bool(record and result.get("text")))
+        self.raw_data_btn.setEnabled(bool(result.get("text")))
 
     def show_raw_data(self):
-        record = self.current_record()
-        if not record or not (self._last_collect or {}).get("text"):
+        if not (self._last_collect or {}).get("text"):
             QMessageBox.information(
                 self,
                 "Raw Data",
-                "Select a boot-loader record from a completed inspection first.",
+                "Complete a boot-loader inspection first.",
             )
             return
-        dialog = RawDataDialog(self, record, self)
+        dialog = RawDataDialog(self)
         dialog.exec()
 
     def show_options(self):

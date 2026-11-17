@@ -4,7 +4,7 @@
 
 Boot Loaders is a read-only structured inspector for boot-loader and EFI state reported by `bootctl`, with optional ephemeral privileged visibility through a fixed helper.
 
-Current release: **0.1.8**
+Current release: **0.1.10**
 
 Repository: <https://github.com/linspectacles/boot-loaders>
 
